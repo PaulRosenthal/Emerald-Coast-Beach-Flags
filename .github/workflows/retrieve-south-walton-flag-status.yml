@@ -1,0 +1,34 @@
+name: Retrieve South Walton, Florida Beach Flag Status
+
+on:
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: "30 * * * *" # Runs 30 minutes past every hour
+  workflow_dispatch:
+
+jobs:
+  populate-current-flag-status:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '22.x'
+          cache: 'npm'
+          cache-dependency-path: current-flag-status/south-walton/package-lock.json
+      - name: Install Dependencies
+        run: npm ci
+        working-directory: current-flag-status/south-walton
+      - name: Run Flag Status Retrieval Script
+        run: node retrieve-current-flag-status.js
+        working-directory: current-flag-status/south-walton
+      - name: Commit Flag Status File
+        run: |
+          git config --global user.name 'Paul Rosenthal'
+          git config --global user.email 'Paul.H.Rosenthal@iCloud.com'
+          git diff --quiet flag-status/south-walton.txt \
+          || (git add flag-status/south-walton.txt \
+              && git commit -m "[Automatic Commit] Update Beach Flag Status" \
+              && git push)
