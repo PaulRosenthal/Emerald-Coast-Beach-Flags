@@ -4,8 +4,8 @@ on:
   push:
     branches:
       - main
-  # schedule:
-  #   - cron: "30 * * * *" 
+  schedule:
+    - cron: "30 * * * *" # Runs 30 minutes past every hour
   workflow_dispatch:
 
 permissions:
@@ -22,25 +22,15 @@ jobs:
       
       - uses: actions/setup-node@v4
         with:
-          node-version: '22.x'
+          node-version: '24.x'
           
-      - name: Cache Playwright browsers
-        id: playwright-cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-browsers-v1
-
       - name: Install Dependencies
         run: npm install
         working-directory: current-flag-status/destin
-        
-      - name: Install Playwright Browsers
-        # This installs browsers only if the cache was missed:
-        if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: npx playwright install chromium --with-deps
 
       - name: Run Flag Status Retrieval Script
+        env:
+          APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
         run: node retrieve-current-flag-status.js
         working-directory: current-flag-status/destin
         

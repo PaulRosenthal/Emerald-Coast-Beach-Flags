@@ -1,4 +1,4 @@
-const { chromium } = require('playwright');
+const { ApifyClient } = require('apify-client');
 const fs = require('fs');
 const path = require('path');
 
@@ -6,7 +6,8 @@ async function getDetailedFlagDescription(flag_status) {
     const text = flag_status.toLowerCase();
     let description = "the current flag status could not be determined from the latest post.";
     
-    if (text.includes("double red") || text.includes("water closed")) {
+    // Explicitly prioritizing "closed" or "double red" strings
+    if (text.includes("double red") || text.includes("water closed") || text.includes("closed")) {
         description = "double red. The water is closed to the public";
     } else if (text.includes("red")) {
         description = "red. This color indicates strong surf and/or currents, and you should not enter the water above knee level";
@@ -24,32 +25,47 @@ async function getDetailedFlagDescription(flag_status) {
 }
 
 async function getFlagStatus() {
-    const browser = await chromium.launch({ headless: true });
-    
-    // We use a mobile-optimized context
-    const context = await browser.newContext({
-        userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1',
-        viewport: { width: 390, height: 844 },
-    });
+    const API_TOKEN = process.env.APIFY_TOKEN;
 
-    const page = await context.newPage();
-    
+    if (!API_TOKEN) {
+        console.error("Error: APIFY_TOKEN environment variable is missing.");
+        process.exit(1);
+    }
+
+    const client = new ApifyClient({ token: API_TOKEN });
+
     try {
-        console.log("Navigating to Mobile Facebook...");
-        // Use the mobile site URL
-        await page.goto('https://m.facebook.com/destinbeachsafety/', { waitUntil: 'domcontentloaded' });
+        console.log("Triggering Apify Facebook Scraper...");
         
-        // Wait for the article element (m.facebook uses standard <article> tags)
-        const postLocator = page.locator('article').first();
-        await postLocator.waitFor({ state: 'visible', timeout: 20000 });
+        const input = {
+            startUrls: [{ url: "https://www.facebook.com/destinbeachsafety/" }],
+            resultsLimit: 3 
+        };
+
+        const run = await client.actor("apify/facebook-posts-scraper").call(input);
+        console.log(`Apify run finished. Fetching results...`);
+
+        const { items } = await client.dataset(run.defaultDatasetId).listItems();
         
-        const postContent = await postLocator.innerText();
+        if (!items || items.length === 0) {
+            throw new Error("Apify returned no posts.");
+        }
+
+        // Search the 3 retrieved items for a post that mentions "flag" OR "closed"
+        const actualFlagPost = items.find(item => {
+            const content = (item.text || item.message || '').toLowerCase();
+            return content.includes('flag') || content.includes('closed');
+        });
+
+        // Fall back to the very first post if neither keyword was found
+        const targetPost = actualFlagPost || items[0];
+        const postText = targetPost.text || targetPost.message || '';
         
-        console.log("--- DEBUG: Raw post content ---");
-        console.log(postContent);
-        console.log("-------------------------------");
-        
-        const result = await getDetailedFlagDescription(postContent);
+        console.log("--- DEBUG: Selected Post Text ---");
+        console.log(postText);
+        console.log("----------------------------------");
+
+        const result = await getDetailedFlagDescription(postText);
         
         const outputFilePath = path.join(__dirname, '..', '..', 'flag-status', 'destin.txt');
         if (!fs.existsSync(path.dirname(outputFilePath))) {
@@ -57,13 +73,12 @@ async function getFlagStatus() {
         }
         
         fs.writeFileSync(outputFilePath, result);
-        console.log("Result saved:", result);
-        
+        console.log("File saved successfully with parsed status:", result);
+
     } catch (error) {
-        console.error("Scraping failed:", error);
+        console.error("Failed to retrieve flag status via Apify:");
+        console.error(error.message);
         process.exit(1);
-    } finally {
-        await browser.close();
     }
 }
 
