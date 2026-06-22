@@ -1,4 +1,4 @@
-const { chromium } = require('playwright');
+const { ApifyClient } = require('apify-client');
 const fs = require('fs');
 const path = require('path');
 
@@ -24,32 +24,45 @@ async function getDetailedFlagDescription(flag_status) {
 }
 
 async function getFlagStatus() {
-    const browser = await chromium.launch({ headless: true });
-    
-    // We use a mobile-optimized context
-    const context = await browser.newContext({
-        userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1',
-        viewport: { width: 390, height: 844 },
-    });
+    const API_TOKEN = process.env.APIFY_TOKEN;
 
-    const page = await context.newPage();
-    
+    if (!API_TOKEN) {
+        console.error("Error: APIFY_TOKEN environment variable is missing.");
+        process.exit(1);
+    }
+
+    // Initialize the ApifyClient with your API token
+    const client = new ApifyClient({ token: API_TOKEN });
+
     try {
-        console.log("Navigating to Mobile Facebook...");
-        // Use the mobile site URL
-        await page.goto('https://m.facebook.com/destinbeachsafety/', { waitUntil: 'domcontentloaded' });
+        console.log("Triggering Apify Facebook Scraper...");
         
-        // Wait for the article element (m.facebook uses standard <article> tags)
-        const postLocator = page.locator('article').first();
-        await postLocator.waitFor({ state: 'visible', timeout: 20000 });
+        // Define the input for the Apify Actor
+        const input = {
+            startUrls: [{ url: "https://www.facebook.com/destinbeachsafety/" }],
+            resultsLimit: 3 // We only need the most recent posts
+        };
+
+        // Run the Actor and wait for it to finish
+        const run = await client.actor("apify/facebook-posts-scraper").call(input);
+
+        console.log(`Apify run finished. Fetching results...`);
+
+        // Fetch the results from the run's dataset
+        const { items } = await client.dataset(run.defaultDatasetId).listItems();
         
-        const postContent = await postLocator.innerText();
+        if (!items || items.length === 0) {
+            throw new Error("Apify returned no posts.");
+        }
+
+        // Get the text of the most recent post
+        const latestPostText = items[0].text || "";
         
-        console.log("--- DEBUG: Raw post content ---");
-        console.log(postContent);
-        console.log("-------------------------------");
-        
-        const result = await getDetailedFlagDescription(postContent);
+        console.log("--- DEBUG: Extracted Post Text ---");
+        console.log(latestPostText);
+        console.log("----------------------------------");
+
+        const result = await getDetailedFlagDescription(latestPostText);
         
         const outputFilePath = path.join(__dirname, '..', '..', 'flag-status', 'destin.txt');
         if (!fs.existsSync(path.dirname(outputFilePath))) {
@@ -57,13 +70,12 @@ async function getFlagStatus() {
         }
         
         fs.writeFileSync(outputFilePath, result);
-        console.log("Result saved:", result);
-        
+        console.log("File saved successfully.");
+
     } catch (error) {
-        console.error("Scraping failed:", error);
+        console.error("Failed to retrieve flag status via Apify:");
+        console.error(error.message);
         process.exit(1);
-    } finally {
-        await browser.close();
     }
 }
 
