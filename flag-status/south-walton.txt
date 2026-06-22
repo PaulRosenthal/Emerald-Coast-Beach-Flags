@@ -1,1 +1,1 @@
-South Walton beach flag status will be written here by GitHub Actions.
+The beach safety flags in Walton County are red. This color indicates strong surf and/or currents, and you should not enter the water above knee level.
