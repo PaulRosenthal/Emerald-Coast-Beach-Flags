@@ -23,9 +23,8 @@ jobs:
         with:
           node-version: '22.x'
           cache: 'npm'
-          cache-dependency-path: current-flag-status/south-walton/package-lock.json
       - name: Install Dependencies
-        run: npm ci
+        run: npm install
         working-directory: current-flag-status/south-walton
       - name: Run Flag Status Retrieval Script
         run: node retrieve-current-flag-status.js
